@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "mirage",
+  "version": "1.0",
+  "name": "Mirage",
+  "description": "Server-side BlockDisplay toolkit for Fabric 1.20.1",
+  "authors": ["MrKieha"],
+  "contact": {
+    "email": "mrkieha.dev@outlook.com"
+  },
+  "license": "LICENSE.md",
+  "icon": "assets/mirage/icon.png",
+  "environment": "server",
+  "accessWidener": "mirage.accesswidener",
+  "entrypoints": {
+    "main": [
+      "dev.mrkieha.mirage.MirageMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "fabric-api": "*",
+    "minecraft": "1.20.1"
+  }
+}
