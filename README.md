@@ -42,7 +42,7 @@ Add the dependency:
 
 ```groovy
 dependencies {
-    modImplementation 'com.github.mrkieha:Mirage:1.0.0'
+    modImplementation 'com.github.mrkieha:Mirage:[Version]'
 }
 ```
 
