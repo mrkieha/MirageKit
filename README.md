@@ -1,35 +1,33 @@
-# MirageKit
+# Mirage
 
-[![](https://jitpack.io/v/mrkieha/MirageKit.svg)](https://jitpack.io/#mrkieha/MirageKit)
-
-Server-side toolkit for Minecraft Fabric Display Entities.
+Server-side toolkit for Minecraft Fabric Display Entities.  
 Provides a fluent API for building, animating, and managing display entity hierarchies without client-side mods.
 
 ---
 
 ## Features
 
-- **Fluent Builder** — chainable API for configuring display entities (transformation, interpolation, brightness, shadow, etc.)
-- **Keyframe Animation System** — timeline-based animations with easing curves
-- **Transformation Hierarchy** — parent-child relationships with local/world space transforms
-- **Task Scheduler** — deferred and repeating tasks bound to entity lifecycle
-- **Display Groups** — logical grouping with bulk operations
-- **Math Utilities** — quaternion helpers, interpolation, matrix decomposition
+- **Fluent Builder** — chainable `MirageBuilder` for configuring Block, Item and Text displays
+- **Display Wrapper** — `MirageDisplay` abstracts `DisplayEntity` with transform, interpolation and lifecycle helpers
+- **Keyframe Animation** — tick-driven `MirageAnimation` with hold / interpolate durations, looping and ping-pong
+- **Transform Hierarchy** — `MirageHierarchy` with `TransformNode` trees, local / world space propagation
+- **Display Groups** — `MirageGroup` for bulk transforms, distribution patterns and relative offsets
+- **World Manager** — `MirageManager` tracks, queries and bulk-operates on displays per `ServerWorld`
+- **Task Scheduler** — `MirageScheduler` for one-shot, repeating and self-cancelling tick tasks
+- **Math Utilities** — `MirageTransform`, `MirageMath`, `MirageEasing` and `TransformNode` for spatial calculations
 
 ---
 
 ## Requirements
 
 - Minecraft **1.20.1**
-- Fabric Loader **≥ 0.19.3**
-- Fabric API **≥ 0.92.9**
+- Fabric Loader **≥ 0.14.0**
+- Fabric API
 - Java **17**
 
 ---
 
 ## Installation
-
-### Gradle
 
 Add JitPack to your `repositories` block:
 
@@ -44,7 +42,7 @@ Add the dependency:
 
 ```groovy
 dependencies {
-    modImplementation 'com.github.mrkieha:MirageKit:1.0.0'
+    modImplementation 'com.github.mrkieha:Mirage:1.0.0'
 }
 ```
 
@@ -52,87 +50,130 @@ dependencies {
 
 ## Quick Start
 
-### 1. Creating a Display Entity
+### 1. Creating a Display
 
 ```java
-import dev.mrkieha.mirage.builder.DisplayEntityBuilder;
-import net.minecraft.entity.decoration.DisplayEntity.ItemDisplayEntity;
+import dev.mrkieha.mirage.Mirage;
+import dev.mrkieha.mirage.MirageDisplay;
 import net.minecraft.item.Items;
 import net.minecraft.server.world.ServerWorld;
 
-public void spawnDisplay(ServerWorld world) {
-    ItemDisplayEntity display = new DisplayEntityBuilder<ItemDisplayEntity>(world)
+public void spawnSword(ServerWorld world) {
+    MirageDisplay display = Mirage.builder(world)
         .item(Items.DIAMOND_SWORD.getDefaultStack())
-        .position(100.5, 64.0, -50.5)
-        .scale(2.0f, 2.0f, 2.0f)
-        .rotation(0f, 45f, 0f)
-        .billboard(DisplayEntityBuilder.Billboard.CENTER)
-        .glowColorOverride(0xFF00FF)
-        .build();
+        .at(100.5, 64.0, -50.5)
+        .scale(2.0f)
+        .rotateY(45f)
+        .billboard(DisplayEntity.BillboardMode.CENTER)
+        .glowColor(0xFF00FF)
+        .fullBright()
+        .buildAndSpawn();
 }
 ```
 
 ### 2. Keyframe Animation
 
 ```java
-import dev.mrkieha.mirage.animation.KeyframeAnimation;
-import dev.mrkieha.mirage.animation.Easing;
+import dev.mrkieha.mirage.Mirage;
+import dev.mrkieha.mirage.MirageAnimation;
+import dev.mrkieha.mirage.util.MirageTransform;
 
-KeyframeAnimation animation = KeyframeAnimation.builder()
-    .duration(60) // ticks
-    .keyframe(0, new Transform().position(0, 0, 0))
-    .keyframe(30, new Transform().position(5, 2, 0), Easing.EASE_IN_OUT)
-    .keyframe(60, new Transform().position(0, 0, 0), Easing.EASE_OUT)
-    .loop(LoopMode.LOOP)
-    .build();
+MirageAnimation anim = Mirage.animate(display)
+    .keyframe(20, MirageTransform.identity().translate(5f, 2f, 0f))
+    .keyframe(20, MirageTransform.identity().translate(0f, 0f, 0f))
+    .loop(true)
+    .play();
 
-animation.start(displayEntity);
+// The animation must be ticked. Register it via the scheduler:
+Mirage.schedule().runRepeating(0, 1, anim::tick);
 ```
 
 ### 3. Transformation Hierarchy
 
 ```java
-import dev.mrkieha.mirage.hierarchy.DisplayNode;
+import dev.mrkieha.mirage.Mirage;
+import dev.mrkieha.mirage.MirageHierarchy;
+import net.minecraft.util.math.Vec3d;
 
-DisplayNode root = new DisplayNode(parentDisplay);
-DisplayNode child = new DisplayNode(childDisplay);
+MirageHierarchy<MirageDisplay> rig = Mirage.hierarchy("root");
 
-root.attach(child);
-child.setLocalTransform(
-    new Transform()
-        .position(2.0, 0.0, 0.0)
-        .rotation(0f, 90f, 0f)
-);
-// child automatically inherits parent's world transform
+// Add a child at a local offset
+rig.add(display, new Vec3d(2.0, 0.0, 0.0));
+
+// Move the whole rig in world space
+rig.moveTo(new Vec3d(100.0, 64.0, 0.0));
+
+// Rotate the root — children follow automatically
+rig.rotateY(90.0);
+
+// Sync interpolated
+rig.syncDisplaysInterpolated(10);
 ```
 
 ### 4. Task Scheduler
 
 ```java
-import dev.mrkieha.mirage.scheduler.DisplayScheduler;
+import dev.mrkieha.mirage.Mirage;
 
-DisplayScheduler scheduler = DisplayScheduler.of(displayEntity);
-
-scheduler.delay(20, () -> {
-    displayEntity.setGlowColorOverride(0x00FF00);
+// One-shot
+Mirage.schedule().runLater(20, () -> {
+    display.glowColor(0x00FF00);
 });
 
-scheduler.repeat(10, 5, () -> {
-    // runs every 10 ticks, 5 times total
-    displayEntity.setInterpolationDuration(5);
+// Repeating every 10 ticks
+Mirage.schedule().runRepeating(0, 10, () -> {
+    display.interpolateNow(5).moveTo(display.getPos().add(0, 0.1, 0));
+});
+
+// Self-cancelling timer
+Mirage.schedule().runTimer(0, 5, task -> {
+    if (!display.isAlive()) task.cancel();
+    display.offset(0, 0.1, 0);
 });
 ```
 
 ### 5. Display Groups
 
 ```java
-import dev.mrkieha.mirage.group.DisplayGroup;
+import dev.mrkieha.mirage.Mirage;
+import dev.mrkieha.mirage.MirageGroup;
 
-DisplayGroup group = new DisplayGroup("hologram");
-group.add(display1, display2, display3);
+MirageGroup group = Mirage.group();
+group.add(display1).add(display2).add(display3);
 
-group.setVisibility(false);
-group.destroy(); // removes all entities
+// Move together preserving offsets
+group.moveTo(new Vec3d(0, 80, 0));
+
+// Or interpolate
+group.interpolateTo(new Vec3d(0, 80, 0), 20);
+
+// Distribute in patterns
+group.distributeCircle(new Vec3d(0, 64, 0), 5.0, 64.0);
+group.distributeGrid(new Vec3d(0, 64, 0), 3, 2.5);
+
+// Cleanup
+group.removeAll();
+```
+
+### 6. World Manager
+
+```java
+import dev.mrkieha.mirage.Mirage;
+import dev.mrkieha.mirage.MirageManager;
+
+MirageManager manager = Mirage.of(world);
+manager.track(display);
+
+// Bulk operations
+manager.animateAll(MirageTransform.identity().scale(0.5f), 10);
+manager.forEach(d -> d.fullBright());
+
+// Spatial queries
+List<MirageDisplay> nearby = manager.findNear(player.getPos(), 32.0);
+
+// Cleanup dead entities
+manager.cleanup();
+manager.removeAll();
 ```
 
 ---
@@ -141,17 +182,26 @@ group.destroy(); // removes all entities
 
 ```
 dev.mrkieha.mirage
-├── builder/          — Fluent builders for all display entity types
-├── animation/        — Keyframe engine, tweening, easing curves
-├── hierarchy/        — Parent-child transform trees
-├── scheduler/        — Tick-synchronized task execution
-├── group/            — Entity collections and bulk ops
-├── math/             — Quaternion, vector, matrix utilities
-└── util/             — Helper methods for common operations
+├── Mirage.java              — Static facade (builder, animate, group, hierarchy, schedule, of)
+├── MirageBuilder.java       — Fluent factory for Block / Item / Text displays
+├── MirageDisplay.java       — Wrapper around DisplayEntity; implements HierarchyMember
+├── MirageAnimation.java     — Tick-driven keyframe animator
+├── MirageHierarchy.java     — Parent-child transform tree for HierarchyMember instances
+├── MirageGroup.java         — Logical collection with offsets and distribution helpers
+├── MirageManager.java       — Per-world tracking, queries and bulk operations
+├── MirageScheduler.java     — Server-tick task scheduler (one-shot, repeating, timer)
+├── MirageMod.java           — Fabric ModInitializer; hooks scheduler into END_SERVER_TICK
+└── util/
+    ├── MirageTransform.java — Fluent builder for AffineTransformation (translation, rotation, scale, pivot)
+    ├── TransformNode.java   — Cached local/world matrix node for hierarchies
+    ├── HierarchyMember.java — Contract: moveTo, interpolateNow, remove
+    ├── MirageMath.java      — lerp, slerp, distance, yawTowards, pitchTowards, lookRotation
+    ├── MirageEasing.java    — linear, easeIn/Out Quad/Cubic, easeOutBack
+    └── MirageValidation.java — Lightweight precondition helpers
 ```
 
 ---
 
 ## License
 
-See [LICENSE.md](LICENSE.md) for details.
+See [LICENSE](LICENSE.md) for details.
